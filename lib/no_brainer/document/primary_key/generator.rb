@@ -43,8 +43,8 @@ module NoBrainer::Document::PrimaryKey::Generator
   TIMESTAMP_SHIFT  = SEQUENCE_SHIFT + SEQUENCE_BITS
 
   def self._generate
-    timestamp = (Time.now.to_i - TIME_OFFSET) & TIMESTAMP_MASK
-
+    time = Time.now
+    timestamp = time.to_i
     unless @last_timestamp == timestamp
       # more noise is better in the ID, but we prefer to avoid
       # wrapping the sequences so that Model.last on a single
@@ -56,13 +56,8 @@ module NoBrainer::Document::PrimaryKey::Generator
       raise Retry if @first_sequence == sequence
     end
     @sequence = sequence
+    pack(time: time, sequence: @sequence)
 
-    machine_id = NoBrainer::Config.machine_id & MACHINE_ID_MASK
-
-    pid = Process.pid & PID_MASK
-
-    (timestamp << TIMESTAMP_SHIFT) | (sequence << SEQUENCE_SHIFT) |
-      (machine_id << MACHINE_ID_SHIFT) | (pid << PID_SHIFT)
   rescue Retry
     sleep 0.1
     retry
@@ -80,6 +75,20 @@ module NoBrainer::Document::PrimaryKey::Generator
   @lock = Mutex.new
   def self.generate
     convert_to_alphanum(@lock.synchronize { _generate })
+  end
+
+  def self.pack(time:, sequence:, machine_id: nil, pid: nil)
+    machine_id ||= NoBrainer::Config.machine_id
+    pid ||= Process.pid
+    timestamp = (time.to_i - TIME_OFFSET)
+    packed = ((timestamp  &  TIMESTAMP_MASK) <<  TIMESTAMP_SHIFT) |
+             ((sequence   &   SEQUENCE_MASK) <<   SEQUENCE_SHIFT) |
+             ((machine_id & MACHINE_ID_MASK) << MACHINE_ID_SHIFT) |
+             ((pid        &        PID_MASK) <<        PID_SHIFT)
+  end
+
+  def self.pack_alphanum(time:, sequence:, machine_id: nil, pid: nil)
+    convert_to_alphanum(pack(time: time, sequence: sequence, machine_id: machine_id, pid: pid))
   end
 
   def self.field_type
